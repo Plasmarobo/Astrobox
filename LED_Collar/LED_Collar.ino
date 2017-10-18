@@ -52,29 +52,70 @@ class Cylon : public Animation {
   public:
     Cylon() {
       i = 0;
+      forward = true;
     }
     
     void Draw() {
       if ((millis() - timer) > 30) {
-        uint8_t index = GetIndex();
         timer = millis();
-        leds[index] = CRGB::Red;
+        leds[i] = CRGB::Red;
         FastLED.show();
-        leds[index] = CRGB::Black;
+        leds[i] = CRGB::Black;
+        if (forward) {
+          ++i;
+        } else {
+          --i;
+        }
+        if (i >= LED_RING_COUNT) {
+          --i;
+          forward = false;
+        } else if (i == 0) {
+          forward = true;
+        }
       }
     }
   private:
-    uint8_t GetIndex() {
-      if (i >= (2 * LED_RING_COUNT)) {
-        i = 0;
-      }
-      if (i < LED_RING_COUNT) {
-        return i++;
-      } else {
-        return LED_RING_COUNT - (i - LED_RING_COUNT);
+    uint8_t i;
+    bool forward;
+};
+
+class Status : public Animation {
+  public:
+    Status() {
+      i = 0;
+      while(i < MAX_ARCS) {
+        newArc();
       }
     }
+
+    void Draw() {
+      if ((millis() - timer) > GEN_RATE) {
+        timer = millis();
+        if (random(GEN_CHANCE) == 0) {
+          newArc();
+        }
+      }
+      
+      fill_solid(leds, LED_RING_COUNT, CRGB::Red);
+      
+      for(uint8_t j = 0; j < MAX_ARCS; j += 2) {
+        fill_solid(leds+arcs[j], arcs[j+1], CRGB::Blue);
+      }
+    }
+  private:
+    void newArc() {
+      if (i >= MAX_ARCS) i = 0;
+      uint8_t _size = random(6, LED_RING_COUNT / 4);
+      arcs[i] = random(0, LED_RING_COUNT - _size);
+      arcs[i+1] = arcs[i] + _size;
+      i += 2;
+    }
     
+    static const uint8_t MAX_ARCS = 12;
+    uint32_t timer;
+    static const uint32_t GEN_RATE = 1000;
+    static const uint8_t GEN_CHANCE = 4; //1/GEN_CHANCE
+    uint8_t arcs[MAX_ARCS]; //ringbuffer
     uint8_t i;
 };
 
@@ -83,6 +124,9 @@ Animation* current_animation = NULL;
 void selectAnimation(uint8_t animation) {
   delete current_animation;
   switch(animation) {
+    case 1:
+      current_animation = new Status();
+      break;
     case 0:
     default:
       current_animation = new Cylon();
@@ -93,7 +137,7 @@ void selectAnimation(uint8_t animation) {
 void setup() {
   FastLED.addLeds<APA102, BGR>(leds, LED_RING_COUNT);
   FastLED.setBrightness(32);
-  selectAnimation(0);
+  selectAnimation(1);
 }
 
 void loop() {
