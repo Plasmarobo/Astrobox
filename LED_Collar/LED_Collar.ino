@@ -119,6 +119,45 @@ class Status : public Animation {
     uint8_t i;
 };
 
+class Rotators : public Animation {
+  public:
+    Rotators() {
+      offset = 0;
+      timer = 0;
+      uint8_t i = 0;
+      uint8_t j = 0;
+      uint8_t e = 4;
+      while(i < LED_RING_COUNT) {
+        for(j = 0; j < 2*e; ++j) {
+          if(j < e) {
+            mask[i] = false;
+          } else {
+            mask[i] = true;
+          }
+          ++i;
+        }
+        e *= 2;
+      }
+    }
+
+    void Draw() {
+      if ((millis() - timer) > rate) {
+        FastLED.clear();
+        for(uint16_t i = 0, j = offset + 1; j != offset; ++j,++i) {
+          if (j >= LED_RING_COUNT) j = 0;
+          if (mask[j])
+            leds[i] = CRGB::Red;
+        }
+        ++offset;
+        FastLED.show();
+      }
+    }
+  private:
+    uint8_t offset;
+    bool mask[LED_RING_COUNT];
+    const uint16_t RATE = 250;
+};
+
 Animation* current_animation = NULL;
 
 void selectAnimation(uint8_t animation) {
@@ -144,4 +183,5 @@ void loop() {
   if (current_animation != NULL) {
     current_animation->Draw();
   }
+  pollInputs();
 }
