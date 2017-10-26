@@ -45,6 +45,105 @@ const uint8_t MIN_BRIGHTNESS = 0;
 
 CRGB leds[LED_RING_COUNT];
 
+#define POT_INPUT_PIN A0
+#define SW_A_INPUT_PIN 18
+#define SW_A_LED_PIN 10
+#define SW_B_INPUT_PIN 15
+#define SW_B_LED_PIN 11
+#define SW_C_INPUT_PIN 17
+#define SW_C_LED_PIN 12
+#define SW_D_INPUT_PIN 16
+#define SW_D_LED_PIN 13
+#define SW_E_LED_PIN 5
+#define SW_E_INPUT_PIN 9
+#define SW_F_INPUT_PIN 19
+#define SW_F_LED_PIN 6
+#define SW_POWER_PIN 20
+#define SW_TOGGLE_PIN 21
+#define LED_PIN_COUNT 6
+
+typedef enum {
+    FADE_IN = 0,
+    HOLD,
+    FADE_OUT
+  } led_state;
+
+typedef struct {
+  uint32_t timer;
+  uint8_t value;
+  uint8_t pin;
+  led_state state;
+} LED;
+
+class FrontLEDs {
+  public:
+    FrontLEDs() {
+      pinMode(SW_A_LED_PIN, OUTPUT);
+      led[0].pin = SW_A_LED_PIN;
+      pinMode(SW_B_LED_PIN, OUTPUT);
+      led[1].pin = SW_B_LED_PIN;
+      pinMode(SW_C_LED_PIN, OUTPUT);
+      led[2].pin = SW_C_LED_PIN;
+      pinMode(SW_D_LED_PIN, OUTPUT);
+      led[3].pin = SW_D_LED_PIN;
+      pinMode(SW_E_LED_PIN, OUTPUT);
+      led[4].pin = SW_E_LED_PIN;
+      pinMode(SW_F_LED_PIN, OUTPUT);
+      led[5].pin = SW_F_LED_PIN;
+      
+      clearLEDS();
+    }
+
+    void clearLEDS() {
+      for(uint8_t i = 0; i < LED_COUNT; ++i) {
+        led[i].value = 0;
+        led[i].state = HOLD;
+        led[index].timer = millis();
+      }
+    };
+
+    void FadeIn(uint8_t index, uint8_t value) {
+      led[index].value = value;
+      led[index].state = FADE_IN;
+      led[index].timer = millis();
+    }
+
+    void FadeOut(uint8_t index, uint8_t value) {
+      led[index].value = value;
+      led[index].state = FADE_OUT;
+      led[index].timer = millis();
+    }
+
+    void Draw() {
+      for(uint8_t i = 0; i < LED_PIN_COUNT; ++i) {
+        uint32_t delta_t = (millis() - led[i].timer);
+        uint16_t value;
+        if (delta_t > RATE) { 
+          led[i].timer = millis();
+          led[i].state = HOLD;
+          continue;
+        }
+        switch(led[i].state) {
+          case FADE_IN:
+            value = (delta_t * led[i].value) / RATE;
+            break;
+          case FADE_OUT:
+            value = ((RATE - delta_t) * led[i].value) / RATE;
+            break;
+          case HOLD:
+          default: 
+            value = led[i].value;
+            break; 
+        }
+        analogWrite(led[i].pin, value);
+      }
+    }
+    
+  protected:
+    LED led[LED_PIN_COUNT];
+    static const uint8_t RATE = 500;
+};
+
 class Animation {
   public:
     virtual void Draw();
@@ -54,7 +153,7 @@ class Animation {
 
 class Cylon : public Animation {
   public:
-    Cylon() {
+    Cylon(FrontLEDs *fled) {
       i = 0;
       forward = true;
     }
@@ -93,7 +192,8 @@ class Cylon : public Animation {
 
 class RandomArcs : public Animation {
   public:
-    RandomArcs() {
+    RandomArcs(FrontLEDs *fled) {
+      fleds = fled;
       for(uint8_t i = 0; i < MAX_ARCS; ++i) {
         arcs[i] = newArc();
       }
@@ -105,7 +205,8 @@ class RandomArcs : public Animation {
         uint32_t advance_timer = (arcs[i].state != ArcStates::HOLD) ? FADE_TIME : arcs[i].life;
         uint32_t current_timer = millis() - arcs[i].timer;
         uint16_t value = 255;
-        
+        Serial.print("Arcs timing ");
+        Serial.print(current_timer); Serial.print("/"); Serial.print(advance_timer);
         if (current_timer > advance_timer) {
            ++arcs[i].state;
            arcs[i].timer = current_timer = 0;
@@ -134,7 +235,15 @@ class RandomArcs : public Animation {
           if (pixel_index >= LED_RING_COUNT) pixel_index -= LED_RING_COUNT;
           leds[pixel_index] = CRGB((uint8_t) value, 0,0);
         }
+
+        for(uint8_t j = 0; j < LED_PIN_COUNT; ++j) {
+          if (fleds->
+        }
+        
       }
+      fleds->Draw();
+      
+      FastLED.show();
     }
     
   protected:
@@ -151,6 +260,7 @@ class RandomArcs : public Animation {
       DEAD
     };
     Arc arcs[MAX_ARCS];
+    FrontLEDs *fleds;
 
     Arc newArc() {
       Arc a;
@@ -165,7 +275,8 @@ class RandomArcs : public Animation {
 
 class Random : public Animation {
   public:
-    Random() {
+    Random(FrontLEDs *fled) {
+      fleds = fled;
       for(uint8_t i = 0; i < LED_RING_COUNT; ++i) {
         state[i] = false;
         timers[i] = millis();
@@ -174,12 +285,14 @@ class Random : public Animation {
   
     void Draw() {
       for(uint8_t i = 0; i < LED_RING_COUNT; ++i) {
+        
         if (millis() > timers[i]) {
           state[i] = !state[i];
           timers[i] = random(MIN_PERIOD, MAX_PERIOD) + millis();
         }
         leds[i] = state[i] ? CRGB::Red : CRGB(0,0,0);
       }
+      fleds->Draw();
       FastLED.show();
     }
     
@@ -188,11 +301,12 @@ class Random : public Animation {
     static const uint32_t MAX_PERIOD = 3000;
     uint32_t timers[LED_RING_COUNT];
     bool state[LED_RING_COUNT];
+    FrontLEDs *fleds;
 };
 
 class Rotators : public Animation {
   public:
-    Rotators() {
+    Rotators(FrontLEDs *fleds) {
       offset = 0;
       timer = 0;
       uint8_t i = 0;
@@ -230,20 +344,22 @@ class Rotators : public Animation {
         ++offset;
         FastLED.show();
       }
+      fleds->Draw();
     }
   private:
     uint8_t offset;
     bool ring_buffer[LED_RING_COUNT];
     static const uint32_t RATE = 500;
+    FrontLEDs *fleds;
 };
 
 Animation* current_animation = NULL;
 
-typedef void(*io_callback)(bool io);
+typedef void(*input_callback)(bool state);
 
-class IO {
+class Input {
   public:
-    IO() {
+    Input() {
       timer = millis();
       pinMode(SW_A_INPUT_PIN, INPUT_PULLUP);
       pinMode(SW_B_INPUT_PIN, INPUT_PULLUP);
@@ -253,14 +369,7 @@ class IO {
       pinMode(SW_F_INPUT_PIN, INPUT_PULLUP);
       pinMode(SW_POWER_PIN, INPUT_PULLUP);
       pinMode(SW_TOGGLE_PIN, INPUT_PULLUP);
-      
-      pinMode(SW_A_LED_PIN, OUTPUT);
-      pinMode(SW_B_LED_PIN, OUTPUT);
-      pinMode(SW_C_LED_PIN, OUTPUT);
-      pinMode(SW_D_LED_PIN, OUTPUT);
-      pinMode(SW_E_LED_PIN, OUTPUT);
-      pinMode(SW_F_LED_PIN, OUTPUT);
-      clearLEDS();
+
       for(uint8_t i = 0; i < DIGITAL_PIN_COUNT; ++i) {
         sw_states[i] = 0;
         callbacks[i] = NULL;
@@ -269,7 +378,7 @@ class IO {
       update();
     };
 
-    void set_callback(uint8_t pin, io_callback callback) {
+    void set_callback(uint8_t pin, input_callback callback) {
       callbacks[pin] = callback;
     };
   
@@ -304,52 +413,29 @@ class IO {
       }
     };
 
-    void clearLEDS() {
-      analogWrite(SW_A_LED_PIN, 0);
-      analogWrite(SW_B_LED_PIN, 0);
-      analogWrite(SW_C_LED_PIN, 0);
-      analogWrite(SW_D_LED_PIN, 0);
-      analogWrite(SW_E_LED_PIN, 0);
-      analogWrite(SW_F_LED_PIN, 0);
-    };
-
   protected:
-    static uint8_t const POT_INPUT_PIN = A0;
-    static uint8_t const SW_A_INPUT_PIN = 18;
-    static uint8_t const SW_A_LED_PIN = 10;
-    static uint8_t const SW_B_INPUT_PIN = 15;
-    static uint8_t const SW_B_LED_PIN = 11;
-    static uint8_t const SW_C_INPUT_PIN = 17;
-    static uint8_t const SW_C_LED_PIN = 12;
-    static uint8_t const SW_D_INPUT_PIN = 16;
-    static uint8_t const SW_D_LED_PIN = 13;
-    static uint8_t const SW_E_INPUT_PIN = 9;
-    static uint8_t const SW_E_LED_PIN = 5;
-    static uint8_t const SW_F_INPUT_PIN = 19;
-    static uint8_t const SW_F_LED_PIN = 6;
-    static uint8_t const SW_POWER_PIN = 20;
-    static uint8_t const SW_TOGGLE_PIN = 21;
     static uint8_t const DIGITAL_PIN_COUNT = 8;
     static uint8_t const pinmap[DIGITAL_PIN_COUNT];
     static uint8_t const POLLRATE = 250;
     uint32_t timer;
 
     uint8_t sw_states[DIGITAL_PIN_COUNT];
-    io_callback callbacks[DIGITAL_PIN_COUNT];
+    input_callback callbacks[DIGITAL_PIN_COUNT];
 };
 
-uint8_t const IO::pinmap[] = {
-  IO::SW_A_INPUT_PIN,
-  IO::SW_B_INPUT_PIN,
-  IO::SW_C_INPUT_PIN,
-  IO::SW_D_INPUT_PIN,
-  IO::SW_E_INPUT_PIN,
-  IO::SW_F_INPUT_PIN,
-  IO::SW_POWER_PIN,
-  IO::SW_TOGGLE_PIN
+uint8_t const Input::pinmap[] = {
+  SW_A_INPUT_PIN,
+  SW_B_INPUT_PIN,
+  SW_C_INPUT_PIN,
+  SW_D_INPUT_PIN,
+  SW_E_INPUT_PIN,
+  SW_F_INPUT_PIN,
+  SW_POWER_PIN,
+  SW_TOGGLE_PIN
 };
 
-IO *io;
+Input *input;
+FrontLEDs *front_leds;
 
 void selectAnimation(uint8_t animation) {
   delete current_animation;
@@ -357,20 +443,20 @@ void selectAnimation(uint8_t animation) {
   switch(animation) {
     default:
     case 0:
-      current_animation = new Cylon();
+      current_animation = new Cylon(front_leds);
       break;
     case 1:
-      current_animation = new RandomArcs();
+      current_animation = new RandomArcs(front_leds);
       break;
     case 2:
-      current_animation = new Random();
+      current_animation = new Random(front_leds);
       break;
     case 3:
-      current_animation = new Rotators();
+      current_animation = new Rotators(front_leds);
       break;
     case 4:
     case 5:
-      current_animation = new Cylon();
+      current_animation = new Cylon(front_leds);
       break;
   }
 }
@@ -381,20 +467,21 @@ void setup() {
   brightness = 32;
   light_enable = true;
   power_enable = true;
-  io = new IO();
-  io->set_callback(0, [](bool state) {if(!state)selectAnimation(0);});
-  io->set_callback(1, [](bool state) {if(!state)selectAnimation(1);});
-  io->set_callback(2, [](bool state) {if(!state)selectAnimation(2);});
-  io->set_callback(3, [](bool state) {if(!state)selectAnimation(3);});
-  io->set_callback(4, [](bool state) {if(!state)selectAnimation(4);});
-  io->set_callback(5, [](bool state) {if(!state)selectAnimation(5);});
+  input = new Input();
+  front_leds = new FrontLEDs();
+  input->set_callback(0, [](bool state) {if(!state){selectAnimation(0); front_leds->FadeIn(0, 255);}});
+  input->set_callback(1, [](bool state) {if(!state)selectAnimation(1);});
+  input->set_callback(2, [](bool state) {if(!state)selectAnimation(2);});
+  input->set_callback(3, [](bool state) {if(!state)selectAnimation(3);});
+  input->set_callback(4, [](bool state) {if(!state)selectAnimation(4);});
+  input->set_callback(5, [](bool state) {if(!state)selectAnimation(5);});
   //Switches
-  io->set_callback(6, [](bool state) {light_enable = state;});
-  io->set_callback(7, [](bool state) {
+  input->set_callback(6, [](bool state) {light_enable = state;});
+  input->set_callback(7, [](bool state) {
     power_enable = !state;
     if (state){
       FastLED.clear();
-      io->clearLEDS();
+      front_leds->clearLEDS();
       FastLED.show(); 
     }
   });
@@ -409,6 +496,7 @@ void loop() {
     if (current_animation != NULL) {
       current_animation->Draw();
     }
-    io->update();
+    front_leds->Draw();
+    input->update();
   }
 }
