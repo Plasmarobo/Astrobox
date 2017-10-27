@@ -45,6 +45,22 @@ const uint8_t MIN_BRIGHTNESS = 0;
 
 CRGB leds[LED_RING_COUNT];
 
+uint8_t color_index = 0;
+CRGB colors[] = {
+  CRGB::Red,
+  CRGB::Blue,
+  CRGB::Green,
+  CRGB::DarkViolet
+};
+
+CRGB currentColor() {
+  return colors[color_index];
+}
+
+uint16_t global_rate;
+#define GLOBAL_RANGE 1800
+#define MIN_GLOBAL_RATE 200
+
 class Animation {
   public:
     virtual void Draw();
@@ -60,9 +76,9 @@ class Cylon : public Animation {
     }
     
     void Draw() {
-      if ((millis() - timer) > 30) {
+      if ((millis() - timer) > (global_rate/50)) {
         timer = millis();
-        leds[i] = CRGB::Red;
+        leds[i] = currentColor();
         FastLED.show();
         leds[i] = CRGB::Black;
         if (forward) {
@@ -83,91 +99,11 @@ class Cylon : public Animation {
     bool forward;
 };
 
- typedef struct {
-      uint8_t start;
-      uint8_t size;
-      uint32_t timer;
-      uint32_t life;
-      uint8_t state;
-} Arc;
-
-class RandomArcs : public Animation {
-  public:
-    RandomArcs() {
-      for(uint8_t i = 0; i < MAX_ARCS; ++i) {
-        arcs[i] = newArc();
-      }
-    }
-
-    void Draw() {
-      //Start with NEWEST ARC (old arcs have preceedance)
-      for(uint8_t i = 0; i < MAX_ARCS; ++i) {
-        uint32_t advance_timer = (arcs[i].state != ArcStates::HOLD) ? FADE_TIME : arcs[i].life;
-        uint32_t current_timer = millis() - arcs[i].timer;
-        uint16_t value = 255;
-        
-        if (current_timer > advance_timer) {
-           ++arcs[i].state;
-           arcs[i].timer = current_timer = 0;
-        }
-        
-        switch(arcs[i].state) {
-          case ArcStates::FADE_IN:
-            value *= current_timer;
-            value /= FADE_TIME;
-            break;
-          case ArcStates::HOLD:
-            break;
-          case ArcStates::FADE_OUT:
-            value *= FADE_TIME - current_timer;
-            value /= FADE_TIME;
-            break;
-          case ArcStates::DEAD:
-          default:
-             value = 0;
-             arcs[i] = newArc();
-             break;
-        }
-        
-        for(uint8_t j = 0; j < arcs[i].size; ++j) {
-          uint8_t pixel_index = arcs[i].start + j;
-          if (pixel_index >= LED_RING_COUNT) pixel_index -= LED_RING_COUNT;
-          leds[pixel_index] = CRGB((uint8_t) value, 0,0);
-        }
-      }
-    }
-    
-  protected:
-    static const uint8_t MAX_ARCS = 4;
-    static const uint8_t MIN_ARC_SIZE = 4;
-    static const uint32_t MAX_ARC_SIZE = LED_RING_COUNT/2;
-    static const uint32_t MIN_ARC_LIFE = 1000;
-    static const uint32_t MAX_ARC_LIFE = 5000;
-    static const uint32_t FADE_TIME = 1000;
-    enum ArcStates {
-      FADE_IN = 0,
-      HOLD,
-      FADE_OUT,
-      DEAD
-    };
-    Arc arcs[MAX_ARCS];
-
-    Arc newArc() {
-      Arc a;
-      a.start = random(0, LED_RING_COUNT-1);
-      a.size = random(MIN_ARC_SIZE, MAX_ARC_SIZE);
-      a.timer = millis();
-      a.life = random(MIN_ARC_LIFE, MAX_ARC_LIFE);
-      a.state = FADE_IN;
-      return a;
-    }
-};
-
 class Random : public Animation {
   public:
     Random() {
       for(uint8_t i = 0; i < LED_RING_COUNT; ++i) {
-        state[i] = false;
+        state[i] = random(0,2);
         timers[i] = millis();
       }
     }
@@ -176,16 +112,16 @@ class Random : public Animation {
       for(uint8_t i = 0; i < LED_RING_COUNT; ++i) {
         if (millis() > timers[i]) {
           state[i] = !state[i];
-          timers[i] = random(MIN_PERIOD, MAX_PERIOD) + millis();
+          timers[i] = random(MIN_PERIOD, 2 * global_rate) + millis();
         }
-        leds[i] = state[i] ? CRGB::Red : CRGB(0,0,0);
+        leds[i] = state[i] ? currentColor() : CRGB(0,0,0);
       }
       FastLED.show();
     }
     
   private:
-    static const uint32_t MIN_PERIOD = 250;
-    static const uint32_t MAX_PERIOD = 3000;
+    static const uint32_t MIN_PERIOD = 200;
+    static const uint32_t MAX_PERIOD = 2000;
     uint32_t timers[LED_RING_COUNT];
     bool state[LED_RING_COUNT];
 };
@@ -194,57 +130,69 @@ class Rotators : public Animation {
   public:
     Rotators() {
       offset = 0;
-      timer = 0;
+      timer = millis();
+      uint16_t e = 4;
+      uint16_t j = 0;
       uint8_t i = 0;
-      uint8_t j = 0;
-      uint8_t e = 4;
+      bool state = true;
       while(i < LED_RING_COUNT) {
-        for(j = 0; j < e; ++j) {
-          if(j < e) {
-            ring_buffer[i] = false;
-          } else {
-            ring_buffer[i] = true;
-          }
-          ++i;
+        if (j < e) {
+          ring_buffer[i] = true;
+        } else {
+          ring_buffer[i] = false;
         }
-        e *= 2;
+        ++i;
+        ++j;
+        if (j >= (2*e)) {
+          e += 4;
+          j = 0;
+        }
       }
     }
 
     void Draw() {
-      if ((millis() - timer) > RATE) {
+      if ((millis() - timer) > (global_rate/25)) {
         timer = millis();
-        FastLED.clear();
         uint8_t i = offset;
         uint8_t j = 0;
-        do {
-          if (ring_buffer[i]) {
-            leds[j] = CRGB::Red;
+        for(uint8_t j = 0; j < LED_RING_COUNT; ++j) {
+          if (ring_buffer[i] == true) {
+            leds[j] = currentColor();
+          } else {
+            leds[j] = CRGB::Black;
           }
           ++i;
-          ++j;
           if (i >= LED_RING_COUNT) {
             i = 0;
           }
-        } while(j < LED_RING_COUNT);
+        }
         ++offset;
+        if (offset >= LED_RING_COUNT) {
+          offset = 0;
+        }
         FastLED.show();
       }
     }
   private:
     uint8_t offset;
     bool ring_buffer[LED_RING_COUNT];
-    static const uint32_t RATE = 500;
+    static const uint32_t RATE = 30;
 };
 
 Animation* current_animation = NULL;
 
 typedef void(*io_callback)(bool io);
 
+typedef enum {
+  LED_SOLID = 0,
+  LED_RANDOM,
+  LED_PULSE,
+  LED_CLEAR
+} FrontPattern;
+
 class IO {
   public:
     IO() {
-      timer = millis();
       pinMode(SW_A_INPUT_PIN, INPUT_PULLUP);
       pinMode(SW_B_INPUT_PIN, INPUT_PULLUP);
       pinMode(SW_C_INPUT_PIN, INPUT_PULLUP);
@@ -266,7 +214,40 @@ class IO {
         callbacks[i] = NULL;
       }
       //Get initial states
+      for(uint8_t i = 0; i < LED_PIN_COUNT; ++i) {
+        led_timer[i] = millis();
+        led_value[i] = LEDBRIGHTNESS;
+      }
+      poll_timer = millis();
+      setSolid();
       update();
+      
+    };
+
+    void resetTimers() {
+      for(uint8_t i = 0; i < LED_PIN_COUNT; ++i) {
+        led_timer[i] = millis();
+      }
+    }
+
+    void setSolid() {
+      led_state = LED_SOLID;
+      resetTimers();
+    };
+    
+    void setPulse() {
+      led_state = LED_PULSE;
+      resetTimers();
+    };
+    
+    void setRandom() {
+      led_state = LED_RANDOM;
+      resetTimers();
+    };
+
+    void clearLEDS() {
+      led_state = LED_CLEAR;
+      resetTimers();
     };
 
     void set_callback(uint8_t pin, io_callback callback) {
@@ -276,10 +257,6 @@ class IO {
     void edge_detect() {
       for(uint8_t i =0; i < DIGITAL_PIN_COUNT; ++i) {
         uint8_t value = digitalRead(pinmap[i]);
-        Serial.print(i);
-        Serial.print("::");
-        Serial.print(value);
-        Serial.print("|");
         if (value != sw_states[i]) {
           sw_states[i] = value;
           
@@ -287,12 +264,11 @@ class IO {
             callbacks[i](value);
         }
       }
-      Serial.println();
     };
 
     void update() {
-      if ((millis() - timer) > POLLRATE) {
-        timer = millis();
+      if ((millis() - poll_timer) > POLLRATE) {
+        poll_timer = millis();
         edge_detect();
         uint16_t pot_value = analogRead(POT_INPUT_PIN);
         // Pot value is clamped to between 0 and 512
@@ -300,17 +276,52 @@ class IO {
           pot_value = 511;
         if (pot_value <= 20) 
           pot_value = 0;
-        brightness = MIN_BRIGHTNESS + ((MAX_BRIGHTNESS * pot_value) / 511);
+        global_rate = MIN_GLOBAL_RATE + ((GLOBAL_RANGE * pot_value) / 511);
       }
-    };
-
-    void clearLEDS() {
-      analogWrite(SW_A_LED_PIN, 0);
-      analogWrite(SW_B_LED_PIN, 0);
-      analogWrite(SW_C_LED_PIN, 0);
-      analogWrite(SW_D_LED_PIN, 0);
-      analogWrite(SW_E_LED_PIN, 0);
-      analogWrite(SW_F_LED_PIN, 0);
+      for(uint8_t i = 0; i < LED_PIN_COUNT; ++i) {
+        switch(led_state) {
+          case LED_SOLID:
+            if (led_value[i] != LEDBRIGHTNESS) {
+              led_value[i] = LEDBRIGHTNESS;
+              analogWrite(ledmap[i], led_value[i]);
+            }
+            break;
+          case LED_PULSE:
+            {
+              uint32_t delta = millis() - led_timer[i];
+              if (delta < 2000) {
+                led_value[i] = (LEDBRIGHTNESS * delta) / 2000;
+              } else if (delta < 2500) {
+                //led_value[i] = LEDBRIGHTNESS; 
+              } else if (delta < 4500) {
+                led_value[i] = (LEDBRIGHTNESS * (2000 - (delta - 2500))) / 2000;
+              } else if (delta < 5250) {
+                //led_value[i] = 0;
+              } else {
+                led_timer[i] = millis();
+              }
+              analogWrite(ledmap[i], led_value[i]);
+            }
+            break;
+          case LED_RANDOM:
+            if (led_timer[i] < millis()) {
+              led_timer[i] = millis() + random(MIN_GLOBAL_RATE, GLOBAL_RANGE);
+              if (led_value[i] == 0) {
+                led_value[i] = LEDBRIGHTNESS;
+                analogWrite(ledmap[i], led_value[i]);
+              } else {
+                led_value[i] = 0;
+                analogWrite(ledmap[i], led_value[i]);
+              }
+            }
+            break;
+          case LED_CLEAR:
+            analogWrite(ledmap[i], 0);
+            break;
+          default:
+            break;
+        }
+      }
     };
 
   protected:
@@ -330,48 +341,56 @@ class IO {
     static uint8_t const SW_POWER_PIN = 20;
     static uint8_t const SW_TOGGLE_PIN = 21;
     static uint8_t const DIGITAL_PIN_COUNT = 8;
+    static uint8_t const LED_PIN_COUNT = 6;
     static uint8_t const pinmap[DIGITAL_PIN_COUNT];
+    static uint8_t const ledmap[LED_PIN_COUNT];
     static uint8_t const POLLRATE = 250;
-    uint32_t timer;
+    static uint8_t const LEDBRIGHTNESS = 128;
+    uint32_t poll_timer;
 
     uint8_t sw_states[DIGITAL_PIN_COUNT];
     io_callback callbacks[DIGITAL_PIN_COUNT];
+
+    uint8_t led_value[6];
+    uint32_t led_timer[6];
+    uint8_t led_state;
 };
 
 uint8_t const IO::pinmap[] = {
   IO::SW_A_INPUT_PIN,
   IO::SW_B_INPUT_PIN,
   IO::SW_C_INPUT_PIN,
-  IO::SW_D_INPUT_PIN,
   IO::SW_E_INPUT_PIN,
   IO::SW_F_INPUT_PIN,
+  IO::SW_D_INPUT_PIN,
   IO::SW_POWER_PIN,
   IO::SW_TOGGLE_PIN
+};
+
+uint8_t const IO::ledmap[] = {
+  IO::SW_A_LED_PIN,
+  IO::SW_B_LED_PIN,
+  IO::SW_C_LED_PIN,
+  IO::SW_D_LED_PIN,
+  IO::SW_E_LED_PIN,
+  IO::SW_F_LED_PIN
 };
 
 IO *io;
 
 void selectAnimation(uint8_t animation) {
   delete current_animation;
-  Serial.print("Setting anim "); Serial.println(animation); 
   switch(animation) {
     default:
     case 0:
       current_animation = new Cylon();
       break;
     case 1:
-      current_animation = new RandomArcs();
+      current_animation = new Rotators();
       break;
     case 2:
       current_animation = new Random();
-      break;
-    case 3:
-      current_animation = new Rotators();
-      break;
-    case 4:
-    case 5:
-      current_animation = new Cylon();
-      break;
+      break;  
   }
 }
 
@@ -385,22 +404,27 @@ void setup() {
   io->set_callback(0, [](bool state) {if(!state)selectAnimation(0);});
   io->set_callback(1, [](bool state) {if(!state)selectAnimation(1);});
   io->set_callback(2, [](bool state) {if(!state)selectAnimation(2);});
-  io->set_callback(3, [](bool state) {if(!state)selectAnimation(3);});
-  io->set_callback(4, [](bool state) {if(!state)selectAnimation(4);});
-  io->set_callback(5, [](bool state) {if(!state)selectAnimation(5);});
+  io->set_callback(3, [](bool state) {if(!state)io->setSolid();});
+  io->set_callback(4, [](bool state) {if(!state)io->setPulse();});
+  io->set_callback(5, [](bool state) {if(!state)io->setRandom();});
   //Switches
-  io->set_callback(6, [](bool state) {light_enable = state;});
-  io->set_callback(7, [](bool state) {
+  io->set_callback(6, [](bool state) {
     power_enable = !state;
-    if (state){
-      FastLED.clear();
-      io->clearLEDS();
-      FastLED.show(); 
+    if (!power_enable){
+      io->clearLEDS(); 
+    }
+  });
+  io->set_callback(7, [](bool state) {
+    ++color_index;
+    if (color_index >= (sizeof(colors)/sizeof(CRGB))) {
+      color_index = 0;
     }
   });
   FastLED.addLeds<APA102, BGR>(leds, LED_RING_COUNT);
   FastLED.setBrightness(brightness);
-  selectAnimation(0);
+  selectAnimation(1);
+  io->setRandom();
+  color_index = 0;
   Serial.println("Complete");
 }
 
@@ -408,7 +432,13 @@ void loop() {
   if (power_enable) {
     if (current_animation != NULL) {
       current_animation->Draw();
+    } 
+  } else {
+    FastLED.clear();
+    for(uint8_t i = 0; i < LED_RING_COUNT; ++i) {
+      leds[i] = CRGB::Black;
     }
-    io->update();
+    FastLED.show();
   }
+  io->update();
 }
