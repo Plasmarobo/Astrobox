@@ -58,8 +58,8 @@ CRGB currentColor() {
 }
 
 uint16_t global_rate;
-#define GLOBAL_RANGE 1800
-#define MIN_GLOBAL_RATE 200
+#define GLOBAL_RANGE 195
+#define MIN_GLOBAL_RATE 5
 
 class Animation {
   public:
@@ -76,7 +76,7 @@ class Cylon : public Animation {
     }
     
     void Draw() {
-      if ((millis() - timer) > (global_rate/50)) {
+      if ((millis() - timer) > (global_rate)) {
         timer = millis();
         leds[i] = currentColor();
         FastLED.show();
@@ -112,7 +112,7 @@ class Random : public Animation {
       for(uint8_t i = 0; i < LED_RING_COUNT; ++i) {
         if (millis() > timers[i]) {
           state[i] = !state[i];
-          timers[i] = random(MIN_PERIOD, 2 * global_rate) + millis();
+          timers[i] = random(MIN_PERIOD, 10 * global_rate) + millis();
         }
         leds[i] = state[i] ? currentColor() : CRGB(0,0,0);
       }
@@ -120,8 +120,7 @@ class Random : public Animation {
     }
     
   private:
-    static const uint32_t MIN_PERIOD = 200;
-    static const uint32_t MAX_PERIOD = 2000;
+    static const uint32_t MIN_PERIOD = 5;
     uint32_t timers[LED_RING_COUNT];
     bool state[LED_RING_COUNT];
 };
@@ -151,7 +150,7 @@ class Rotators : public Animation {
     }
 
     void Draw() {
-      if ((millis() - timer) > (global_rate/25)) {
+      if ((millis() - timer) > (global_rate)) {
         timer = millis();
         uint8_t i = offset;
         uint8_t j = 0;
@@ -305,7 +304,7 @@ class IO {
             break;
           case LED_RANDOM:
             if (led_timer[i] < millis()) {
-              led_timer[i] = millis() + random(MIN_GLOBAL_RATE, GLOBAL_RANGE);
+              led_timer[i] = millis() + random(300, 2500);
               if (led_value[i] == 0) {
                 led_value[i] = LEDBRIGHTNESS;
                 analogWrite(ledmap[i], led_value[i]);
@@ -395,8 +394,8 @@ void selectAnimation(uint8_t animation) {
 }
 
 void setup() {
-  Serial.begin(115200);
-  Serial.println("Booting");
+  //Serial.begin(115200);
+  //Serial.println("Booting");
   brightness = 32;
   light_enable = true;
   power_enable = true;
@@ -425,7 +424,7 @@ void setup() {
   selectAnimation(1);
   io->setRandom();
   color_index = 0;
-  Serial.println("Complete");
+  //Serial.println("Complete");
 }
 
 void loop() {
